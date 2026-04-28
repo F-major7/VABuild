@@ -35,7 +35,7 @@ except ModuleNotFoundError:
 from .config import Settings
 from .deepgram_client import DeepgramClient
 from .elevenlabs_client import ElevenLabsClient
-from .ivr_state_machine import IvrStateMachine
+from .llm_ivr import LlmIvrDriver
 from .logger import get_logger
 from .models import CallStatusResponse, OrderModel
 from .twilio_client import TwilioClient
@@ -50,13 +50,13 @@ class CallManager:
         self._twilio = TwilioClient(settings)
         self._deepgram_by_call: dict[str, DeepgramClient] = {}
         self._elevenlabs = ElevenLabsClient(settings)
-        self._state_machines: dict[str, IvrStateMachine] = {}
+        self._llm_ivr: dict[str, LlmIvrDriver] = {}
         self._call_states: dict[str, dict[str, Any]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
     async def initiate_call(self, order: OrderModel) -> str:
         call_sid = await self._twilio.create_outbound_call(order.phone_number)
-        self._state_machines[call_sid] = IvrStateMachine(order)
+        self._llm_ivr[call_sid] = LlmIvrDriver(order, self._settings)
         self._locks[call_sid] = asyncio.Lock()
         self._call_states[call_sid] = {
             "call_sid": call_sid,
@@ -187,26 +187,26 @@ class CallManager:
     ) -> None:
         lock = self._locks[call_sid]
         async with lock:
-            state_machine = self._state_machines[call_sid]
-            transition = state_machine.transition_for_prompt(transcript)
+            driver = self._llm_ivr[call_sid]
+            transition = await driver.decide_action(transcript)
             if transition is None:
-                failed = state_machine.register_reprompt()
-                self._call_states[call_sid]["retry_count"] = state_machine.retry_count
+                failed = driver.register_reprompt()
+                self._call_states[call_sid]["retry_count"] = driver.retry_count
                 self._log_event(
                     call_sid,
                     "ivr_reprompt_detected",
-                    {"transcript": transcript, "retry_count": state_machine.retry_count},
+                    {"transcript": transcript, "retry_count": driver.retry_count},
                 )
                 if failed:
                     self._call_states[call_sid]["phase"] = "failed"
-                    self._call_states[call_sid]["ivr_state"] = state_machine.state.value
+                    self._call_states[call_sid]["ivr_state"] = driver.state
                     self._log_event(call_sid, "ivr_failed", {"reason": "max_retries_exceeded"})
                     await self._twilio.end_call(call_sid)
                 return
 
             previous_state = self._call_states[call_sid]["ivr_state"]
             self._call_states[call_sid]["ivr_state"] = transition.next_state.value
-            self._call_states[call_sid]["retry_count"] = state_machine.retry_count
+            self._call_states[call_sid]["retry_count"] = driver.retry_count
             self._log_event(
                 call_sid,
                 "ivr_transition",
