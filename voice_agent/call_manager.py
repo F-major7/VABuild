@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
 
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import EndFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -22,6 +25,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.deepgram.stt import DeepgramSTTService, LiveOptions
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.openai.llm import OpenAILLMService
 
 try:
@@ -37,6 +41,7 @@ from .deepgram_client import DeepgramClient
 from .elevenlabs_client import ElevenLabsClient
 from .llm_ivr import LlmIvrDriver
 from .logger import get_logger
+from .metrics import calls_total, human_phase_duration, ivr_duration, ivr_retries_total
 from .models import CallStatusResponse, OrderModel
 from .twilio_client import TwilioClient
 
@@ -124,6 +129,7 @@ class CallManager:
                         self._call_states[call_sid]["stream_sid"] = stream_sid
                         self._call_states[call_sid]["transcript_buffer"] = []
                         self._call_states[call_sid]["hold_event"] = hold_event
+                        self._call_states[call_sid]["ivr_start"] = time.monotonic()
                     transcript_task = asyncio.create_task(
                         self._consume_deepgram_transcripts(call_sid, stream_sid, websocket, deepgram)
                     )
@@ -197,6 +203,7 @@ class CallManager:
                     "ivr_reprompt_detected",
                     {"transcript": transcript, "retry_count": driver.retry_count},
                 )
+                ivr_retries_total.labels(state=driver.state).inc()
                 if failed:
                     self._call_states[call_sid]["phase"] = "failed"
                     self._call_states[call_sid]["ivr_state"] = driver.state
@@ -241,6 +248,9 @@ class CallManager:
 
             if transition.terminal:
                 self._call_states[call_sid]["phase"] = "hold"
+                ivr_start = self._call_states[call_sid].get("ivr_start")
+                if ivr_start is not None:
+                    ivr_duration.observe(time.monotonic() - ivr_start)
                 self._log_event(call_sid, "phase_updated", {"phase": "hold"})
                 hold_event = self._call_states[call_sid].get("hold_event")
                 if hold_event:
@@ -261,75 +271,108 @@ class CallManager:
         )
 
     async def _run_human_conversation(self, call_sid: str, stream_sid: str, websocket: WebSocket) -> None:
-        order = self._call_states[call_sid]["order"]
-        order_json = order.model_dump() if hasattr(order, "model_dump") else order
+        order: OrderModel = self._call_states[call_sid]["order"]
+        order_json = order.model_dump()
 
-        system_prompt = f"""
-You are an AI agent that just finished navigating a pizza restaurant IVR.
-You are now on hold waiting for a human employee to pick up.
+        system_prompt = f"""You are an AI agent placing a pizza delivery order over the phone.
+You have just navigated the restaurant's automated IVR and are now on hold waiting for a human employee.
 
-ORDER DATA:
+ORDER:
 {json.dumps(order_json, indent=2)}
 
-PHASE 2 - HOLD:
-Stay completely silent. Do not say anything.
-Wait for a human to greet you before speaking.
-Hold music or silence may be present - ignore it.
-If you hear any intelligible human speech, start speaking.
-Respond when you hear a clear human greeting like
-"hello", "thanks for calling", "what can I get you", etc.
+=== PHASE: ON HOLD ===
+Stay completely silent. Do not speak under any circumstances.
+Ignore hold music, beeps, and silence.
+Only begin speaking when you hear a clear human greeting such as
+"hello", "thanks for calling", "what can I get for you", or similar.
 
-PHASE 3 - HUMAN CONVERSATION:
-Once human picks up, place the order naturally and conversationally.
+=== PHASE: ORDERING ===
+Once a human picks up, place the order using the rules below.
 
-ORDERING RULES:
-- Order in strict sequence: pizza first, then side, then drink
-- Do NOT list the entire order at once
-- Start with pizza only
-- Wait for the employee to ask what else ("anything else?", etc.) before moving to side
-- After side, wait again for a follow-up prompt before moving to drink
-- If employee does not ask for next item yet, do not volunteer it
-- Order pizza with exact size, crust, and toppings from order data
-- If a topping is unavailable, ONLY accept from acceptable_topping_subs
-- NEVER accept no_go_toppings under any circumstances even if offered
-- Order side first_choice first. If unavailable try backup_options in order.
-- If all sides unavailable and if_all_unavailable is "skip", skip the side
-- Track running total as prices are given
-- Order drink first_choice. If skip_if_over_budget is true and drink
-  would push total over budget_max, skip the drink
-- Push for exact prices if employee gives vague answers
-- Get exact delivery time, not ranges
-- Get order confirmation number
-- Deliver special_instructions word for word before hanging up
-- Before saying goodbye, ask if they need anything else
-- Say goodbye naturally and end the call
+SEQUENCE — strictly one item at a time:
+1. Order the pizza first. State size, crust, and toppings.
+2. Wait for the employee to ask "anything else?" or similar before mentioning the side.
+3. After the side is confirmed, wait for another "anything else?" prompt before ordering the drink.
+   If adding the drink would push the running total over {order_json['budget_max']} and
+   skip_if_over_budget is true, skip the drink entirely.
+
+PIZZA SUBSTITUTIONS:
+- If a topping is unavailable, only accept substitutions from: {order_json['pizza']['acceptable_topping_subs']}
+- Never accept any of the following even if offered: {order_json['pizza']['no_go_toppings']}
+- If the employee offers a no-go topping, politely decline and ask for an alternative.
+
+SIDES:
+- Try first_choice first. If unavailable, try backup_options in order.
+- If all options are unavailable and if_all_unavailable is "skip", skip the side.
+
+BUDGET:
+- Keep a running total as each item is priced.
+- If pizza + side already exceeds {order_json['budget_max']}, outcome is over_budget — end the call.
+
+PRICES AND DELIVERY:
+- If the employee gives a vague price ("about thirty"), ask for the exact amount.
+- If the employee gives a time range ("35-40 minutes"), ask which one it will be.
+
+ORDER NUMBER AND SPECIAL INSTRUCTIONS:
+- Get the order confirmation number before delivering special instructions.
+- Deliver this word for word: "{order_json['special_instructions']}"
 
 SPEAKING STYLE:
-- Sound like a real caller, not robotic
-- Use short natural fillers occasionally, such as "umm", "uhh", "hmm", "got it", "okay"
-- Do not overuse fillers; keep speech concise and clear
-- Keep turns short and phone-friendly
+- Sound like a real person, not a robot.
+- Use occasional natural fillers: "umm", "uhh", "got it", "okay". Do not overuse them.
+- Keep turns short and phone-friendly.
 
-HANGUP OUTCOMES:
-When call ends, you must have one of these outcomes:
-- completed: pizza confirmed, prices collected, total + delivery time +
-  order number received, special instructions delivered
-- nothing_available: pizza itself cannot be ordered
-- over_budget: pizza + side already exceeds budget_max
-- detected_as_bot: employee suspects you are a bot
-
-After the call ends print this JSON to stdout:
-{{
-  "outcome": "completed|nothing_available|over_budget|detected_as_bot",
-  "pizza": {{"description": "...", "substitutions": {{}}, "price": 0.0}},
-  "side": {{"description": "...", "original": "...", "price": 0.0}},
-  "drink": {{"description": "...", "price": 0.0}},
-  "total": 0.0,
-  "delivery_time": "...",
-  "order_number": "...",
-  "special_instructions_delivered": true
-}}
+ENDING THE CALL:
+You MUST call the complete_order tool before hanging up. Do not end the conversation without calling it.
+Outcomes:
+- completed: order confirmed, all prices collected, delivery time and order number received,
+  special instructions delivered
+- nothing_available: the pizza itself cannot be ordered in any form
+- over_budget: pizza + side already exceed budget_max
+- detected_as_bot: employee suspects you are not a human caller
 """
+
+        complete_order_schema = FunctionSchema(
+            name="complete_order",
+            description=(
+                "Call this when the ordering conversation is finished and you are ready to hang up. "
+                "This is the only exit from the call — you must call it."
+            ),
+            properties={
+                "outcome": {
+                    "type": "string",
+                    "enum": ["completed", "nothing_available", "over_budget", "detected_as_bot"],
+                    "description": "Result of the ordering attempt.",
+                },
+                "pizza_description": {"type": "string", "description": "Final pizza as ordered."},
+                "pizza_substitutions": {
+                    "type": "object",
+                    "description": "Map of original topping to substituted topping.",
+                },
+                "pizza_price": {"type": "number"},
+                "side_description": {"type": "string", "description": "Side item as ordered, or empty string if skipped."},
+                "side_original": {"type": "string", "description": "Side first_choice from the order."},
+                "side_price": {"type": "number"},
+                "drink_description": {"type": "string", "description": "Drink as ordered, or empty string if skipped."},
+                "drink_price": {"type": "number"},
+                "total": {"type": "number", "description": "Sum of all items actually ordered."},
+                "delivery_time": {"type": "string", "description": "Exact delivery time quoted by the restaurant."},
+                "order_number": {"type": "string", "description": "Confirmation number from the restaurant."},
+                "special_instructions_delivered": {
+                    "type": "boolean",
+                    "description": "Whether special_instructions were read to the employee.",
+                },
+            },
+            required=[
+                "outcome",
+                "pizza_description",
+                "pizza_price",
+                "total",
+                "delivery_time",
+                "order_number",
+                "special_instructions_delivered",
+            ],
+        )
 
         serializer = TwilioFrameSerializer(
             stream_sid=stream_sid,
@@ -376,11 +419,11 @@ After the call ends print this JSON to stdout:
             sample_rate=8000,
         )
 
-        context = LLMContext(messages=[{"role": "system", "content": system_prompt}])
-        vad = SileroVADAnalyzer(sample_rate=8000)
-        context_aggregator = LLMContextAggregatorPair(
-            context, user_params=LLMUserAggregatorParams(vad_analyzer=vad)
+        context = LLMContext(
+            messages=[{"role": "system", "content": system_prompt}],
+            tools=ToolsSchema(standard_tools=[complete_order_schema]),
         )
+        context_aggregator = LLMContextAggregatorPair(context)
 
         pipeline = Pipeline(
             [
@@ -403,11 +446,27 @@ After the call ends print this JSON to stdout:
             ),
         )
 
+        async def handle_complete_order(params: FunctionCallParams) -> None:
+            result = dict(params.arguments)
+            self._call_states[call_sid]["result"] = result
+            print(json.dumps(result, indent=2), flush=True)
+            self._log_event(call_sid, "complete_order", result)
+            calls_total.labels(outcome=result.get("outcome", "unknown")).inc()
+            human_start = self._call_states[call_sid].get("human_start")
+            if human_start is not None:
+                human_phase_duration.observe(time.monotonic() - human_start)
+            await params.result_callback({"status": "ok"})
+            await task.queue_frame(EndFrame())
+
+        llm.register_function("complete_order", handle_complete_order)
+
         @transport.event_handler("on_client_disconnected")
         async def on_disconnected(transport, client):
             await task.queue_frame(EndFrame())
             self._log_event(call_sid, "human_phase_completed", {})
 
+        self._call_states[call_sid]["human_start"] = time.monotonic()
         self._log_event(call_sid, "human_phase_started", {"stream_sid": stream_sid})
+        self._call_states[call_sid]["phase"] = "human_conversation"
         runner = PipelineRunner(handle_sigint=False)
         await runner.run(task)

@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 from .config import Settings
 from .ivr_state_machine import IvrState, StateTransitionResult
 from .logger import get_logger
+from .metrics import llm_response_latency
 from .models import OrderModel
 
 logger = get_logger("voice_agent.llm_ivr")
@@ -124,7 +125,9 @@ class LlmIvrDriver:
             )
             return None
 
-        latency_ms = int((time.monotonic() - start) * 1000)
+        latency_s = time.monotonic() - start
+        llm_response_latency.observe(latency_s)
+        latency_ms = int(latency_s * 1000)
         choice = response.choices[0]
 
         if not choice.message.tool_calls:

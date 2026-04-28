@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .call_manager import CallManager
 from .config import get_settings
@@ -26,3 +28,8 @@ async def call_status(call_sid: str) -> CallStatusResponse:
 @app.websocket("/media-stream")
 async def media_stream(websocket: WebSocket) -> None:
     await call_manager.handle_media_stream(websocket)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

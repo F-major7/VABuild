@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from .config import Settings
+from .metrics import tts_latency
 
 
 class ElevenLabsClient:
@@ -21,7 +24,9 @@ class ElevenLabsClient:
             "xi-api-key": self._settings.elevenlabs_api_key,
             "content-type": "application/json",
         }
+        start = time.monotonic()
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
-            return response.content
+        tts_latency.observe(time.monotonic() - start)
+        return response.content
