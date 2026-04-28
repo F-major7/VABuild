@@ -159,6 +159,14 @@ Prometheus at `GET /metrics`:
 
 ---
 
+## Web UI
+
+**https://f-major7.github.io/VABuild/**
+
+A hosted order form that generates and copies the exact `curl` command for any order configuration. Point the Server URL to a live deployment and it upgrades to a full dashboard — real-time call phase, a timestamped event log, and a final order summary (prices, confirmation number, delivery time) once the agent completes the call.
+
+---
+
 ## Setup
 
 ```bash
