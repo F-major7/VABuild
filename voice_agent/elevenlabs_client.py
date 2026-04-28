@@ -9,11 +9,14 @@ from .metrics import tts_latency
 
 
 class ElevenLabsClient:
-    def __init__(self, settings: Settings):
+    """ElevenLabs HTTP TTS client producing mulaw 8kHz audio for Twilio."""
+
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._base_url = "https://api.elevenlabs.io/v1/text-to-speech"
 
     async def synthesize_mulaw_8khz(self, text: str) -> bytes:
+        """Synthesize text to mulaw 8kHz audio bytes."""
         url = f"{self._base_url}/{self._settings.elevenlabs_voice_id}/stream?output_format=ulaw_8000"
         payload = {
             "text": text,
@@ -28,5 +31,6 @@ class ElevenLabsClient:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
+            audio = response.content
         tts_latency.observe(time.monotonic() - start)
-        return response.content
+        return audio

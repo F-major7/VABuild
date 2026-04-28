@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import WebSocket
@@ -18,10 +20,7 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import (
-    LLMContextAggregatorPair,
-    LLMUserAggregatorParams,
-)
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.deepgram.stt import DeepgramSTTService, LiveOptions
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
@@ -50,7 +49,9 @@ logger = get_logger("voice_agent.call_manager")
 
 
 class CallManager:
-    def __init__(self, settings: Settings):
+    """Orchestrates the full lifecycle of an outbound pizza ordering call."""
+
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._twilio = TwilioClient(settings)
         self._deepgram_by_call: dict[str, DeepgramClient] = {}
@@ -60,6 +61,7 @@ class CallManager:
         self._locks: dict[str, asyncio.Lock] = {}
 
     async def initiate_call(self, order: OrderModel) -> str:
+        """Dial the restaurant, initialise per-call state, return call_sid."""
         call_sid = await self._twilio.create_outbound_call(order.phone_number)
         self._llm_ivr[call_sid] = LlmIvrDriver(order, self._settings)
         self._locks[call_sid] = asyncio.Lock()
@@ -77,6 +79,7 @@ class CallManager:
         return call_sid
 
     async def get_call_status(self, call_sid: str) -> CallStatusResponse:
+        """Return current phase, IVR state, retry count, and event log for a call."""
         call_state = self._call_states.get(call_sid)
         if not call_state:
             raise KeyError(f"Call not found for sid={call_sid}")
@@ -90,6 +93,7 @@ class CallManager:
         )
 
     async def handle_media_stream(self, websocket: WebSocket) -> None:
+        """Drive the Twilio media-stream WebSocket through IVR then human conversation phases."""
         await websocket.accept()
         call_sid: str | None = None
         stream_sid: str | None = None
@@ -162,7 +166,8 @@ class CallManager:
                 await deepgram.close()
             if call_sid and call_sid in self._deepgram_by_call:
                 del self._deepgram_by_call[call_sid]
-            # Avoid raising if the websocket is already closed by transport/pipeline.
+            if call_sid:
+                self._write_call_log(call_sid)
             if (
                 websocket.client_state != WebSocketState.DISCONNECTED
                 and websocket.application_state != WebSocketState.DISCONNECTED
@@ -235,16 +240,23 @@ class CallManager:
                 )
                 self._log_event(call_sid, "dtmf_sent", {"digits": transition.action_value})
             elif transition.action_type == "tts" and transition.action_value:
-                audio_bytes = await self._elevenlabs.synthesize_mulaw_8khz(transition.action_value)
-                encoded = base64.b64encode(audio_bytes).decode("utf-8")
-                await websocket.send_json(
-                    {
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {"payload": encoded},
-                    }
-                )
-                self._log_event(call_sid, "tts_sent", {"text": transition.action_value})
+                try:
+                    audio_bytes = await self._elevenlabs.synthesize_mulaw_8khz(transition.action_value)
+                    encoded = base64.b64encode(audio_bytes).decode("utf-8")
+                    await websocket.send_json(
+                        {
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {"payload": encoded},
+                        }
+                    )
+                    self._log_event(call_sid, "tts_sent", {"text": transition.action_value, "bytes": len(audio_bytes)})
+                except Exception as exc:
+                    logger.error(
+                        "ivr_tts_error",
+                        extra={"event_data": {"call_sid": call_sid, "text": transition.action_value, "error": str(exc)}},
+                    )
+                    self._log_event(call_sid, "ivr_tts_error", {"text": transition.action_value, "error": str(exc)})
 
             if transition.terminal:
                 self._call_states[call_sid]["phase"] = "hold"
@@ -255,6 +267,41 @@ class CallManager:
                 hold_event = self._call_states[call_sid].get("hold_event")
                 if hold_event:
                     hold_event.set()
+
+    def _write_call_log(self, call_sid: str) -> None:
+        """Write a structured call log file to logs/ after a call ends."""
+        state = self._call_states.get(call_sid, {})
+        result: dict[str, Any] = state.get("result", {})
+        order: OrderModel | None = state.get("order")
+        events: list[dict[str, Any]] = state.get("logs", [])
+
+        outcome = result.get("outcome") or state.get("phase", "disconnected")
+        raw_id = result.get("order_number") or call_sid[-6:]
+        identifier = re.sub(r"[^a-zA-Z0-9]", "", raw_id)[:12]
+
+        now = datetime.now(timezone.utc)
+        filename = f"{now.strftime('%Y-%m-%d_%H%M')}_{outcome}_{identifier}.json"
+
+        summary: dict[str, Any] = {
+            "outcome": outcome,
+            "call_sid": call_sid,
+            "started_at": events[0]["timestamp"] if events else now.isoformat(),
+            "ended_at": now.isoformat(),
+            **({"customer": order.customer_name, "phone": order.phone_number} if order else {}),
+            **{k: v for k, v in result.items() if k != "outcome"},
+        }
+
+        log_events = [
+            {"time": e.get("timestamp", "")[11:19], **{k: v for k, v in e.items() if k != "timestamp"}}
+            for e in events
+        ]
+
+        logs_dir = Path(__file__).resolve().parent.parent / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        (logs_dir / filename).write_text(
+            json.dumps({"summary": summary, "events": log_events}, indent=2, default=str)
+        )
+        logger.info("call_log_written", extra={"event_data": {"call_sid": call_sid, "file": filename}})
 
     def _log_event(self, call_sid: str, event_name: str, data: dict[str, Any]) -> None:
         payload = {"event": event_name, **data}
@@ -415,7 +462,7 @@ Outcomes:
         tts = ElevenLabsTTSService(
             api_key=self._settings.elevenlabs_api_key,
             voice_id=self._settings.elevenlabs_voice_id,
-            output_format="ulaw_8000",
+            output_format="pcm_16000",
             sample_rate=8000,
         )
 

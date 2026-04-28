@@ -1,0 +1,8 @@
+services:
+  voice-agent:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: voice_agent/.env
+    volumes:
+      - ./logs:/app/logs

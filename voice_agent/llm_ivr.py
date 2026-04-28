@@ -61,21 +61,21 @@ _TOOLS: list[dict[str, Any]] = [
 
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are navigating an automated IVR phone menu to place a pizza delivery order.
-You will receive transcripts of what the IVR says.
-Call exactly one tool per transcript based on what the IVR is asking.
+You will receive transcripts of what the IVR says, along with your current state in the IVR flow.
 
-Order details for reference:
+Order details:
 - Customer name: {customer_name}
 - Callback number: {phone_number}
 - Delivery zip code: {zip_code}
 
-Rules:
-- press_digit("1") when the IVR offers a delivery option (e.g. "press 1 for delivery")
-- speak_value("{customer_name}") when the IVR asks for the name on the order
-- press_digit("{phone_number}") when the IVR asks for a callback or phone number
-- speak_value("{zip_code}") when the IVR asks for a delivery zip code
-- speak_value("yes") when the IVR asks you to confirm the order details
-- enter_hold() when the IVR says it is placing you on hold or connecting to a team member
+IVR flow states and what to do in each:
+- WELCOME: Expect a menu asking you to press a digit (e.g. "press 1 for delivery", "press 1 to place an order", "for delivery press 1"). Call press_digit with the appropriate digit.
+- NAME: The IVR is asking for a name. Call speak_value("{customer_name}").
+- PHONE: The IVR is asking for a callback or phone number. Call press_digit("{phone_number}").
+- ZIP: The IVR is asking for a zip code or delivery area. Call speak_value("{zip_code}").
+- CONFIRM: The IVR is asking you to confirm the details. Call speak_value("yes").
+
+enter_hold() — ONLY call this when the IVR explicitly uses hold language: "please hold", "one moment", "stay on the line", "transferring you", "connecting you now". NEVER call enter_hold for a menu option, even if it involves speaking to someone.
 
 Respond only via tool calls, never with plain text.
 """
@@ -113,7 +113,7 @@ class LlmIvrDriver:
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": self._system_prompt},
-                    {"role": "user", "content": transcript},
+                    {"role": "user", "content": f"[Current state: {self._state.value}]\n{transcript}"},
                 ],
                 tools=_TOOLS,
                 tool_choice="required",
@@ -149,6 +149,7 @@ class LlmIvrDriver:
                     "args": args,
                     "latency_ms": latency_ms,
                     "state": self._state.value,
+                    "transcript": transcript,
                 }
             },
         )
