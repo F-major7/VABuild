@@ -41,7 +41,7 @@ WS /media-stream
     │          │                                 │
     │  DeepgramClient  ← raw WebSocket           │
     │          │  transcript                     │
-    │  LlmIvrDriver (GPT-4o + 3 tools)          │
+    │  LlmIvrDriver (GPT-4o + 3 tools)           │
     │          │                                 │
     │  ┌───────┴────────┬───────────────┐        │
     │  press_digit   speak_value    enter_hold   │
@@ -59,7 +59,7 @@ WS /media-stream
     │          │  transcript                     │
     │  LLMContextAggregatorPair                  │
     │          │                                 │
-    │  OpenAILLMService (GPT-4o)                │
+    │  OpenAILLMService (GPT-4o)                 │
     │          │  text / tool call               │
     │  ElevenLabsTTSService (pcm_16000)          │
     │          │  audio frames                   │
@@ -67,7 +67,7 @@ WS /media-stream
     │          │                                 │
     │  FastAPIWebsocketTransport (output)        │
     │                                            │
-    │  └── complete_order() ─────────────────── ┤
+    │  └── complete_order() ───────────────────  ┤
     │                                            │
     └────────────────────────────────────────────┘
                        │
@@ -113,18 +113,9 @@ logs/2026-04-28_1921_completed_A7X3K1.json
 
 ---
 
-## Problems Encountered and How We Fixed Them
+## Problems Encountered and Fixes
 
-### 1. IVR called `enter_hold()` on a menu option
-**Symptom**: Agent skipped the entire IVR and jumped straight to human phase on the first prompt.
-
-**Root cause**: The system prompt described `enter_hold()` as "connecting to a team member" — which placing an order also involves. The LLM couldn't distinguish "press 1 to place an order" from a hold/transfer prompt.
-
-**Fix**: Rewrote the system prompt to be state-aware. The LLM now receives its current state with every transcript. `enter_hold()` is explicitly restricted to hold language ("please hold", "one moment", "stay on the line"). Menu options can never trigger it.
-
----
-
-### 2. Human phase TTS generating audio but silent on the phone
+### 1. Human phase TTS generating audio but silent on the phone
 **Symptom**: Pipecat logs confirmed audio was being generated, but nothing was heard on the call.
 
 **Root cause**: `ElevenLabsTTSService` was set to `output_format="ulaw_8000"`, so ElevenLabs returned pre-encoded mulaw audio. `TwilioFrameSerializer` then encoded it to mulaw a second time. Double mulaw encoding produces silence.
@@ -133,32 +124,12 @@ logs/2026-04-28_1921_completed_A7X3K1.json
 
 ---
 
-### 3. IVR TTS silently crashing — no error in logs
+### 2. IVR TTS silently crashing — no error in logs
 **Symptom**: Call log showed `ivr_transition` with `action_type: tts` but no `tts_sent` event after it. Agent stopped responding and the call dropped.
 
 **Root cause**: `synthesize_mulaw_8khz()` was raising an unhandled exception. Without a try/except in `_handle_ivr_prompt`, the exception propagated to the asyncio task and terminated it silently. The Twilio WebSocket stayed open, so the call appeared alive but the agent had stopped.
 
 **Fix**: Wrapped TTS synthesis and WebSocket send in try/except. Errors are now logged with the full exception message. The task no longer dies on a single TTS failure.
-
----
-
-### 4. ElevenLabs 401 — misdiagnosed as invalid API key
-**Symptom**: After adding error logging, every TTS call failed with `401 Unauthorized`.
-
-**Misdiagnosis**: Tested the wrong ElevenLabs endpoint (`/v1/user`) which also returned 401 for a different reason (missing `user_read` scope). This led to incorrect conclusions about the key and voice ID.
-
-**Root cause**: The ElevenLabs account had exhausted its free tier (10,000 characters/month). ElevenLabs returns HTTP `401` for quota exceeded — the same status code as an invalid key.
-
-**Fix**: Fetched the full response body instead of reading only the status code. The body contained `"status": "quota_exceeded"`. Solution: add credits to the account.
-
----
-
-### 5. `response.content` accessed after httpx connection closed
-**Symptom**: Potential for empty audio bytes returned from ElevenLabs on the IVR TTS path.
-
-**Root cause**: `return response.content` was placed outside the `async with httpx.AsyncClient()` block (moved there to wrap timing metrics). For streaming HTTP responses (ElevenLabs `/stream` endpoint), the body buffer may not be guaranteed after the connection closes.
-
-**Fix**: Read body inside the block (`audio = response.content`), return after.
 
 ---
 
