@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PizzaTime — Voice Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        oklch(0.975 0.005 60);
+    --surface:   #ffffff;
+    --surface2:  oklch(0.965 0.006 60);
+    --border:    oklch(0.88 0.008 60);
+    --border2:   oklch(0.82 0.01 60);
+    --text:      oklch(0.18 0.012 60);
+    --text2:     oklch(0.45 0.01 60);
+    --text3:     oklch(0.62 0.008 60);
+    --accent:    oklch(0.62 0.19 50);
+    --accent-bg: oklch(0.97 0.04 60);
+    --accent-hi: oklch(0.55 0.22 50);
+    --success:   oklch(0.55 0.15 145);
+    --warn:      oklch(0.62 0.17 80);
+    --danger:    oklch(0.55 0.18 25);
+    --mono:      'DM Mono', monospace;
+    --sans:      'DM Sans', sans-serif;
+    --radius:    10px;
+    --shadow:    0 1px 3px oklch(0.18 0.012 60 / 0.08), 0 4px 12px oklch(0.18 0.012 60 / 0.06);
+  }
+
+  html { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+
+  body {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 32px 64px;
+    gap: 0 40px;
+  }
+
+  /* HEADER */
+  .site-header {
+    grid-column: 1 / -1;
+    padding: 36px 0 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    border-bottom: 1.5px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .logo { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; color: var(--text); }
+  .logo span { color: var(--accent); }
+  .logo-sub { font-size: 13px; color: var(--text3); font-family: var(--mono); font-weight: 400; }
+
+  /* COLUMNS */
+  .col-form   { grid-column: 1; }
+  .col-status { grid-column: 2; }
+
+  /* SECTION CARDS */
+  .card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .card-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 18px;
+    font-family: var(--mono);
+  }
+
+  /* FORM ELEMENTS */
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  label { display: block; font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+  label .req { color: var(--accent); margin-left: 2px; }
+
+  input[type="text"],
+  input[type="number"],
+  select,
+  textarea {
+    width: 100%;
+    padding: 9px 13px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    transition: border-color 0.15s;
+    outline: none;
+    appearance: none;
+  }
+  input[type="text"]:focus,
+  input[type="number"]:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px oklch(0.62 0.19 50 / 0.12);
+  }
+  input[type="number"] { font-family: var(--mono); }
+  textarea { resize: vertical; min-height: 72px; }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 34px;
+  }
+
+  .field-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+  /* CHIP INPUT */
+  .chip-wrap {
+    min-height: 42px;
+    padding: 6px 8px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    cursor: text;
+    transition: border-color 0.15s;
+  }
+  .chip-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px oklch(0.62 0.19 50 / 0.12); }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-family: var(--mono);
+    line-height: 1.4;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .chip-default { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .chip-danger  { background: oklch(0.97 0.03 25); color: var(--danger); border: 1px solid oklch(0.88 0.06 25); }
+  .chip-warn    { background: oklch(0.97 0.04 80); color: oklch(0.48 0.16 70); border: 1px solid oklch(0.88 0.07 80); }
+  .chip-remove { cursor: pointer; opacity: 0.45; font-size: 14px; line-height: 1; padding: 0 1px; transition: opacity 0.1s; }
+  .chip-remove:hover { opacity: 1; }
+  .chip-input {
+    border: none; outline: none;
+    font-family: var(--mono); font-size: 13px;
+    background: transparent; color: var(--text);
+    flex: 1; min-width: 120px; padding: 3px 4px;
+  }
+  .chip-hint { font-size: 11px; color: var(--text3); margin-top: 5px; font-family: var(--mono); }
+
+  /* SUGGESTION PILLS */
+  .suggestions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .sug-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 5px;
+    font-size: 12px; font-family: var(--mono);
+    background: var(--surface2); border: 1.5px solid var(--border);
+    color: var(--text2); cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+    user-select: none;
+  }
+  .sug-pill:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .sug-pill::before { content: '+'; font-size: 11px; opacity: 0.5; }
+  .sug-pill.added { opacity: 0.3; cursor: default; pointer-events: none; }
+  .sug-pill.added::before { content: '✓'; }
+
+  /* TOGGLE */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 13px; background: var(--surface2);
+    border: 1.5px solid var(--border); border-radius: 7px;
+  }
+  .toggle-label { font-size: 13px; font-weight: 500; color: var(--text2); }
+  .toggle-label small { display: block; font-size: 11px; font-weight: 400; color: var(--text3); margin-top: 1px; font-family: var(--mono); }
+  .toggle { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border2); border-radius: 12px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .toggle-track::after {
+    content: ''; position: absolute;
+    top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: white;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); transition: transform 0.2s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--accent); }
+  .toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+
+  /* BUDGET FIELD */
+  .budget-prefix { position: relative; }
+  .budget-prefix::before {
+    content: '$'; position: absolute; left: 13px; top: 50%;
+    transform: translateY(-50%); color: var(--text3);
+    font-family: var(--mono); font-size: 14px; pointer-events: none;
+  }
+  .budget-prefix input { padding-left: 26px; }
+
+  /* SUBMIT BUTTON */
+  .btn-place {
+    width: 100%; padding: 14px 24px;
+    background: var(--accent); color: white;
+    border: none; border-radius: var(--radius);
+    font-family: var(--sans); font-size: 15px; font-weight: 600;
+    cursor: pointer; letter-spacing: 0.01em;
+    transition: background 0.15s, transform 0.1s;
+    box-shadow: 0 2px 8px oklch(0.62 0.19 50 / 0.35);
+    margin-top: 4px;
+  }
+  .btn-place:hover { background: var(--accent-hi); }
+  .btn-place:active { transform: scale(0.99); }
+  .btn-place:disabled { background: var(--border2); box-shadow: none; cursor: not-allowed; color: var(--text3); }
+
+  /* ERROR */
+  .form-error {
+    display: none; padding: 10px 14px;
+    background: oklch(0.97 0.03 25); border: 1.5px solid oklch(0.88 0.08 25);
+    border-radius: 7px; color: var(--danger);
+    font-size: 13px; margin-bottom: 16px; font-family: var(--mono);
+  }
+  .form-error.visible { display: block; }
+
+  /* SERVER URL BAR */
+  .server-bar {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px;
+  }
+  .server-bar-label { font-size: 11px; font-family: var(--mono); color: var(--text3); white-space: nowrap; flex-shrink: 0; }
+  .server-bar input {
+    flex: 1; padding: 7px 11px; font-size: 13px;
+    font-family: var(--mono); border: 1.5px solid var(--border);
+    border-radius: 7px; background: var(--surface);
+    color: var(--text2); outline: none; transition: border-color 0.15s;
+  }
+  .server-bar input:focus { border-color: var(--accent); }
+
+  /* STATUS PANEL */
+  .status-panel { position: sticky; top: 32px; }
+
+  .status-empty {
+    background: var(--surface); border: 1.5px dashed var(--border);
+    border-radius: var(--radius); padding: 48px 24px;
+    text-align: center; color: var(--text3);
+  }
+  .status-empty-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.35; }
+  .status-empty p { font-size: 14px; }
+
+  /* PHASE INDICATOR */
+  .phase-bar {
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: var(--radius); padding: 20px 24px;
+    margin-bottom: 20px; box-shadow: var(--shadow);
+  }
+  .phase-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text3);
+    font-family: var(--mono); margin-bottom: 10px;
+  }
+  .phase-steps { display: flex; gap: 6px; align-items: center; }
+  .phase-step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.4s; }
+  .phase-step.active { background: var(--accent); }
+  .phase-step.done   { background: oklch(0.78 0.08 50); }
+  .phase-names { display: flex; margin-top: 10px; gap: 6px; }
+  .phase-name { flex: 1; font-size: 10px; font-family: var(--mono); color: var(--text3); text-align: center; }
+  .phase-name.active { color: var(--accent); font-weight: 500; }
+  .phase-current { margin-top: 14px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); font-family: var(--mono); }
+  .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+  .static-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+
+  /* LOGS */
+  .logs-card {
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: var(--radius); margin-bottom: 20px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .logs-header {
+    padding: 16px 20px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logs-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); font-family: var(--mono); }
+  .logs-count { font-size: 11px; font-family: var(--mono); color: var(--text3); background: var(--surface2); padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border); }
+  .logs-body { max-height: 300px; overflow-y: auto; padding: 12px 0; }
+  .logs-body::-webkit-scrollbar { width: 5px; }
+  .logs-body::-webkit-scrollbar-track { background: transparent; }
+  .logs-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .log-entry {
+    display: grid; grid-template-columns: 72px 1fr;
+    gap: 12px; padding: 7px 20px; align-items: baseline;
+    transition: background 0.1s;
+  }
+  .log-entry:hover { background: var(--surface2); }
+  .log-entry.log-complete { background: oklch(0.97 0.04 145); }
+  .log-entry.log-complete:hover { background: oklch(0.95 0.05 145); }
+  .log-time { font-size: 11px; font-family: var(--mono); color: var(--text3); text-align: right; }
+  .log-event { font-size: 13px; font-family: var(--mono); color: var(--text); word-break: break-all; }
+  .log-event .evt-name { color: var(--accent); font-weight: 500; }
+  .log-event .evt-complete { color: var(--success); font-weight: 500; }
+
+  /* SUMMARY CARD */
+  .summary-card { background: var(--surface); border: 2px solid var(--success); border-radius: var(--radius); overflow: hidden; box-shadow: 0 0 0 4px oklch(0.55 0.15 145 / 0.1); margin-bottom: 20px; }
+  .summary-header { background: oklch(0.55 0.15 145); padding: 14px 20px; display: flex; align-items: center; gap: 10px; color: white; }
+  .summary-header-icon { font-size: 18px; }
+  .summary-header-title { font-weight: 600; font-size: 15px; }
+  .summary-header-sub { font-size: 12px; opacity: 0.8; font-family: var(--mono); margin-left: auto; }
+  .summary-body { padding: 18px 20px; }
+  .summary-row { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+  .summary-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .summary-item-label { font-size: 13px; color: var(--text2); flex: 1; }
+  .summary-item-desc  { font-size: 13px; color: var(--text); font-family: var(--mono); flex: 2; }
+  .summary-item-price { font-size: 13px; font-family: var(--mono); color: var(--text); text-align: right; white-space: nowrap; }
+  .summary-total-row  { display: flex; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--border); }
+  .summary-total-label { font-size: 14px; font-weight: 600; }
+  .summary-total-val   { font-size: 16px; font-weight: 600; font-family: var(--mono); color: var(--accent); }
+  .summary-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .meta-item { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 10px 13px; }
+  .meta-item-label { font-size: 10px; font-family: var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
+  .meta-item-val   { font-size: 16px; font-weight: 600; margin-top: 2px; font-family: var(--mono); }
+
+  /* OUTCOME BADGES */
+  .outcome-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-family: var(--mono); font-weight: 500; border: 1.5px solid; }
+  .outcome-completed         { background: oklch(0.97 0.04 145); color: var(--success); border-color: oklch(0.78 0.1 145); }
+  .outcome-over_budget       { background: oklch(0.97 0.04 25);  color: var(--danger);  border-color: oklch(0.84 0.08 25); }
+  .outcome-nothing_available { background: oklch(0.97 0.04 25);  color: var(--danger);  border-color: oklch(0.84 0.08 25); }
+  .outcome-detected_as_bot   { background: oklch(0.97 0.04 60);  color: var(--warn);    border-color: oklch(0.84 0.07 60); }
+
+  /* CALL SID */
+  .callsid-bar { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; margin-bottom: 14px; }
+  .callsid-label { font-size: 11px; color: var(--text3); font-family: var(--mono); flex-shrink: 0; }
+  .callsid-val   { font-size: 12px; font-family: var(--mono); color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* RETRY BADGE */
+  .retry-badge { font-size: 11px; font-family: var(--mono); color: var(--warn); background: oklch(0.97 0.04 80); border: 1px solid oklch(0.88 0.07 80); padding: 2px 8px; border-radius: 20px; margin-left: auto; flex-shrink: 0; }
+
+  /* CURL CARD */
+  .curl-card { margin-top: 0; }
+  .curl-pre {
+    background: oklch(0.13 0.01 60);
+    border: 1.5px solid oklch(0.22 0.01 60);
+    border-radius: 7px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: oklch(0.88 0.01 60);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin-bottom: 12px;
+    line-height: 1.65;
+    min-height: 80px;
+  }
+  .curl-pre .curl-url   { color: oklch(0.78 0.14 200); }
+  .curl-pre .curl-flag  { color: oklch(0.72 0.12 280); }
+  .curl-pre .curl-val   { color: oklch(0.82 0.12 145); }
+  .curl-footer { display: flex; align-items: center; gap: 10px; }
+  .btn-copy {
+    padding: 8px 18px;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    cursor: pointer; color: var(--text2);
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .btn-copy:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+  .btn-copy:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-copy.copied { border-color: var(--success); color: var(--success); background: oklch(0.97 0.04 145); }
+  .copy-hint { font-size: 11px; font-family: var(--mono); color: var(--text3); }
+
+  @media (max-width: 900px) {
+    body { grid-template-columns: 1fr; padding: 0 20px 40px; }
+    .col-status { grid-column: 1; }
+    .status-panel { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo">pizza<span>Time</span></div>
+  <div class="logo-sub">voice agent · order console</div>
+</header>
+
+<!-- LEFT: FORM -->
+<div class="col-form">
+  <form id="orderForm" novalidate>
+
+    <div class="card">
+      <div class="card-title">Customer</div>
+      <div class="field">
+        <label>Name <span class="req">*</span></label>
+        <input type="text" id="customer_name" placeholder="John Doe" required>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Phone <span class="req">*</span></label>
+          <input type="text" id="phone_number" placeholder="5551234567" maxlength="10" required>
+        </div>
+        <div class="field">
+          <label>Budget Max <span class="req">*</span></label>
+          <div class="budget-prefix">
+            <input type="number" id="budget_max" placeholder="45.00" min="0" step="0.01" required>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Delivery Address <span class="req">*</span></label>
+        <input type="text" id="delivery_address" placeholder="123 Main St, Austin TX 78701" required>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Pizza</div>
+      <div class="field-row">
+        <div class="field">
+          <label>Size <span class="req">*</span></label>
+          <select id="pizza_size">
+            <option value="large">Large</option>
+            <option value="medium">Medium</option>
+            <option value="small">Small</option>
+            <option value="extra-large">Extra Large</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Crust <span class="req">*</span></label>
+          <select id="pizza_crust">
+            <option value="thin">Thin</option>
+            <option value="hand-tossed">Hand-Tossed</option>
+            <option value="thick">Thick</option>
+            <option value="stuffed">Stuffed</option>
+            <option value="gluten-free">Gluten-Free</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Toppings <span class="req">*</span></label>
+        <div class="chip-wrap" id="toppings-wrap">
+          <input class="chip-input" id="toppings-input" placeholder="type topping, press Enter…">
+        </div>
+        <div class="chip-hint">↵ Enter to add each topping</div>
+        <div class="suggestions" id="toppings-sug"></div>
+      </div>
+      <div class="field">
+        <label>Acceptable Substitutions</label>
+        <div class="chip-wrap" id="subs-wrap">
+          <input class="chip-input" id="subs-input" placeholder="type sub, press Enter…">
+        </div>
+        <div class="chip-hint">Toppings you'll accept if a requested one is unavailable</div>
+        <div class="suggestions" id="subs-sug"></div>
+      </div>
+      <div class="field">
+        <label>No-Go Toppings</label>
+        <div class="chip-wrap" id="nogo-wrap">
+          <input class="chip-input" id="nogo-input" placeholder="type topping, press Enter…">
+        </div>
+        <div class="chip-hint">Never accept these, even if suggested</div>
+        <div class="suggestions" id="nogo-sug"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Side</div>
+      <div class="field">
+        <label>First Choice</label>
+        <input type="text" id="side_first" placeholder="breadsticks">
+      </div>
+      <div class="field">
+        <label>Backup Options</label>
+        <div class="chip-wrap" id="sidebackup-wrap">
+          <input class="chip-input" id="sidebackup-input" placeholder="type backup, press Enter…">
+        </div>
+        <div class="chip-hint">Tried in order if first choice is unavailable</div>
+        <div class="suggestions" id="sidebackup-sug"></div>
+      </div>
+      <div class="field">
+        <label>If All Unavailable</label>
+        <select id="side_unavailable">
+          <option value="skip">skip — don't order a side</option>
+          <option value="ask">ask the employee for suggestions</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Drink</div>
+      <div class="field">
+        <label>First Choice</label>
+        <input type="text" id="drink_first" placeholder="Coke">
+      </div>
+      <div class="field">
+        <label>Alternatives</label>
+        <div class="chip-wrap" id="drinkalts-wrap">
+          <input class="chip-input" id="drinkalts-input" placeholder="type alternative, press Enter…">
+        </div>
+        <div class="suggestions" id="drinkalts-sug"></div>
+      </div>
+      <div class="field" style="margin-top: 4px;">
+        <div class="toggle-row">
+          <div class="toggle-label">
+            Skip if over budget
+            <small>Don't order drink if it exceeds budget_max</small>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="skip_if_over_budget" checked>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Special Instructions</div>
+      <div class="field">
+        <label>Delivery Notes</label>
+        <textarea id="special_instructions" placeholder="Leave at door, ring once."></textarea>
+      </div>
+    </div>
+
+    <div class="form-error" id="formError"></div>
+    <button type="submit" class="btn-place" id="submitBtn">Place Order →</button>
+
+  </form>
+</div>
+
+<!-- RIGHT: STATUS + CURL -->
+<div class="col-status">
+
+  <!-- SERVER URL -->
+  <div class="server-bar">
+    <span class="server-bar-label">server</span>
+    <input type="text" id="serverUrl" value="http://localhost:8000" spellcheck="false" autocomplete="off">
+  </div>
+
+  <!-- STATUS PANEL -->
+  <div class="status-panel" id="statusPanel">
+
+    <div class="status-empty" id="statusEmpty">
+      <div class="status-empty-icon">📞</div>
+      <p>Fill out the order form and hit<br><strong>Place Order</strong> to start a call.</p>
+    </div>
+
+    <div id="statusLive" style="display:none;">
+
+      <div class="callsid-bar">
+        <span class="callsid-label">call_sid</span>
+        <span class="callsid-val" id="callSidDisplay">—</span>
+        <span class="retry-badge" id="retryBadge" style="display:none;"></span>
+      </div>
+
+      <div class="phase-bar">
+        <div class="phase-label">Call Phase</div>
+        <div class="phase-steps" id="phaseSteps">
+          <div class="phase-step" data-phase="ivr"></div>
+          <div class="phase-step" data-phase="hold"></div>
+          <div class="phase-step" data-phase="human_conversation"></div>
+          <div class="phase-step" data-phase="completed"></div>
+        </div>
+        <div class="phase-names">
+          <span class="phase-name" data-phase="ivr">IVR</span>
+          <span class="phase-name" data-phase="hold">Hold</span>
+          <span class="phase-name" data-phase="human_conversation">Conversation</span>
+          <span class="phase-name" data-phase="completed">Complete</span>
+        </div>
+        <div class="phase-current" id="phaseCurrent">
+          <span class="pulse-dot"></span>
+          <span id="phaseText">Initiating call…</span>
+        </div>
+      </div>
+
+      <div id="summarySection" style="display:none;"></div>
+
+      <div class="logs-card">
+        <div class="logs-header">
+          <span class="logs-title">Event Log</span>
+          <span class="logs-count" id="logsCount">0 events</span>
+        </div>
+        <div class="logs-body" id="logsBody">
+          <div style="padding: 20px; text-align: center; color: var(--text3); font-size: 13px; font-family: var(--mono);">
+            Waiting for events…
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CURL COMMAND PANEL -->
+  <div class="card curl-card">
+    <div class="card-title">Curl Command</div>
+    <pre class="curl-pre" id="curlPre">Fill in the order form to generate the command.</pre>
+    <div class="curl-footer">
+      <button type="button" class="btn-copy" id="copyBtn" onclick="copyCurl()" disabled>Copy</button>
+      <span class="copy-hint" id="copyHint">runs against the server URL above</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── CHIP INPUT ─────────────────────────────────────────────────────
+function ChipInput(wrapId, inputId, variant = 'default') {
+  const wrap  = document.getElementById(wrapId);
+  const input = document.getElementById(inputId);
+  let values  = [];
+
+  wrap.addEventListener('click', () => input.focus());
+
+  input.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ',') && input.value.trim()) {
+      e.preventDefault();
+      add(input.value.trim().replace(/,$/, ''));
+    }
+    if (e.key === 'Backspace' && input.value === '' && values.length > 0) {
+      remove(values[values.length - 1]);
+    }
+  });
+
+  function add(val) {
+    if (!val || values.includes(val)) return;
+    values.push(val);
+    render();
+    input.value = '';
+    updateCurlCommand();
+  }
+
+  function remove(val) {
+    values = values.filter(v => v !== val);
+    render();
+    updateCurlCommand();
+  }
+
+  function render() {
+    wrap.querySelectorAll('.chip').forEach(c => c.remove());
+    values.forEach(val => {
+      const chip = document.createElement('span');
+      chip.className = `chip chip-${variant}`;
+      chip.innerHTML = `${val}<span class="chip-remove" data-val="${val}">×</span>`;
+      chip.querySelector('.chip-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        remove(val);
+      });
+      wrap.insertBefore(chip, input);
+    });
+  }
+
+  return {
+    get values() { return [...values]; },
+    set(arr) { values = [...arr]; render(); },
+    add
+  };
+}
+
+const chips = {
+  toppings:   ChipInput('toppings-wrap',   'toppings-input',   'default'),
+  subs:       ChipInput('subs-wrap',       'subs-input',       'warn'),
+  nogo:       ChipInput('nogo-wrap',       'nogo-input',       'danger'),
+  sideBackup: ChipInput('sidebackup-wrap', 'sidebackup-input', 'default'),
+  drinkAlts:  ChipInput('drinkalts-wrap',  'drinkalts-input',  'default'),
+};
+
+// ── SUGGESTION PILLS ───────────────────────────────────────────────
+const SUGGESTIONS = {
+  toppings:   ['pepperoni', 'sausage', 'mushrooms', 'onion', 'green pepper', 'black olives', 'jalapeño', 'bacon', 'extra cheese', 'pineapple', 'spinach', 'ham'],
+  subs:       ['sausage', 'onion', 'bacon', 'green pepper', 'spinach', 'jalapeño', 'black olives', 'ham', 'extra cheese'],
+  nogo:       ['anchovies', 'pineapple', 'olives', 'jalapeño', 'extra cheese', 'mushrooms'],
+  sideBackup: ['garlic bread', 'breadsticks', 'mozzarella sticks', 'wings', 'salad', 'cheesy bread'],
+  drinkAlts:  ['Pepsi', 'Sprite', 'water', 'Diet Coke', 'lemonade', '2L Coke', 'Mountain Dew'],
+};
+
+function SuggestionRow(containerId, chipInstance, suggestions) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  function refresh() {
+    const current = chipInstance.values;
+    container.innerHTML = '';
+    suggestions.forEach(s => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'sug-pill' + (current.includes(s) ? ' added' : '');
+      pill.textContent = s;
+      pill.addEventListener('click', () => { chipInstance.add(s); refresh(); });
+      container.appendChild(pill);
+    });
+  }
+
+  const origAdd = chipInstance.add.bind(chipInstance);
+  chipInstance.add = function(val) { origAdd(val); refresh(); };
+
+  refresh();
+  return { refresh };
+}
+
+const sugRows = {
+  toppings:   SuggestionRow('toppings-sug',   chips.toppings,   SUGGESTIONS.toppings),
+  subs:       SuggestionRow('subs-sug',       chips.subs,       SUGGESTIONS.subs),
+  nogo:       SuggestionRow('nogo-sug',       chips.nogo,       SUGGESTIONS.nogo),
+  sideBackup: SuggestionRow('sidebackup-sug', chips.sideBackup, SUGGESTIONS.sideBackup),
+  drinkAlts:  SuggestionRow('drinkalts-sug',  chips.drinkAlts,  SUGGESTIONS.drinkAlts),
+};
+
+// ── PREFILL DEMO ───────────────────────────────────────────────────
+(function prefill() {
+  document.getElementById('customer_name').value       = 'John Doe';
+  document.getElementById('phone_number').value        = '5551234567';
+  document.getElementById('delivery_address').value    = '123 Main St, Austin TX 78701';
+  document.getElementById('budget_max').value          = '45.00';
+  document.getElementById('side_first').value          = 'breadsticks';
+  document.getElementById('drink_first').value         = 'Coke';
+  document.getElementById('special_instructions').value = 'Leave at door, ring once.';
+  chips.toppings.set(['pepperoni', 'mushrooms']);
+  chips.subs.set(['sausage', 'olives']);
+  chips.nogo.set(['anchovies']);
+  chips.sideBackup.set(['garlic bread']);
+  chips.drinkAlts.set(['Pepsi', 'water']);
+  Object.values(sugRows).forEach(r => r && r.refresh());
+  updateCurlCommand();
+})();
+
+// ── CURL COMMAND ───────────────────────────────────────────────────
+function buildPayload() {
+  return {
+    customer_name:       document.getElementById('customer_name').value.trim() || 'Your Name',
+    phone_number:        document.getElementById('phone_number').value.trim()  || '5551234567',
+    delivery_address:    document.getElementById('delivery_address').value.trim() || '123 Main St, Austin TX 78701',
+    pizza: {
+      size:                    document.getElementById('pizza_size').value,
+      crust:                   document.getElementById('pizza_crust').value,
+      toppings:                chips.toppings.values,
+      acceptable_topping_subs: chips.subs.values,
+      no_go_toppings:          chips.nogo.values,
+    },
+    side: {
+      first_choice:       document.getElementById('side_first').value.trim(),
+      backup_options:     chips.sideBackup.values,
+      if_all_unavailable: document.getElementById('side_unavailable').value,
+    },
+    drink: {
+      first_choice:        document.getElementById('drink_first').value.trim(),
+      alternatives:        chips.drinkAlts.values,
+      skip_if_over_budget: document.getElementById('skip_if_over_budget').checked,
+    },
+    budget_max:           parseFloat(document.getElementById('budget_max').value) || 45,
+    special_instructions: document.getElementById('special_instructions').value.trim(),
+  };
+}
+
+function updateCurlCommand() {
+  const server  = (document.getElementById('serverUrl').value.trim() || 'http://localhost:8000').replace(/\/$/, '');
+  const payload = buildPayload();
+  const json    = JSON.stringify(payload, null, 2);
+  document.getElementById('curlPre').textContent =
+    `curl -X POST ${server}/call \\\n  -H "Content-Type: application/json" \\\n  -d '${json.replace(/'/g, "'\\''")}'`;
+  document.getElementById('copyBtn').disabled = false;
+}
+
+function copyCurl() {
+  const text = document.getElementById('curlPre').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn  = document.getElementById('copyBtn');
+    const hint = document.getElementById('copyHint');
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    hint.textContent = 'paste it in your terminal';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+      hint.textContent = 'runs against the server URL above';
+    }, 2000);
+  });
+}
+
+// Update curl on any form change
+document.getElementById('orderForm').addEventListener('input', updateCurlCommand);
+document.getElementById('serverUrl').addEventListener('input', updateCurlCommand);
+document.getElementById('skip_if_over_budget').addEventListener('change', updateCurlCommand);
+
+// ── FORM SUBMIT ────────────────────────────────────────────────────
+const form      = document.getElementById('orderForm');
+const submitBtn = document.getElementById('submitBtn');
+const formError = document.getElementById('formError');
+
+function showError(msg) {
+  formError.textContent = msg;
+  formError.classList.add('visible');
+  formError.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function clearError() { formError.classList.remove('visible'); }
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+
+  const name    = document.getElementById('customer_name').value.trim();
+  const phone   = document.getElementById('phone_number').value.trim();
+  const address = document.getElementById('delivery_address').value.trim();
+  const budget  = parseFloat(document.getElementById('budget_max').value);
+
+  if (!name)                          return showError('Customer name is required.');
+  if (!/^\d{10}$/.test(phone))        return showError('Phone number must be exactly 10 digits.');
+  if (!address)                       return showError('Delivery address is required.');
+  if (!/\b\d{5}\b/.test(address))     return showError('Delivery address must include a 5-digit zip code.');
+  if (isNaN(budget) || budget <= 0)   return showError('Budget must be a positive number.');
+  if (chips.toppings.values.length === 0) return showError('Add at least one pizza topping.');
+
+  updateCurlCommand();
+
+  const server = (document.getElementById('serverUrl').value.trim() || 'http://localhost:8000').replace(/\/$/, '');
+  const order  = buildPayload();
+
+  submitBtn.disabled    = true;
+  submitBtn.textContent = 'Placing order…';
+
+  try {
+    const res = await fetch(`${server}/call`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(order),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error ${res.status}`);
+    }
+
+    const data = await res.json();
+    startPolling(data.call_sid, server);
+
+  } catch (err) {
+    const isNetwork = err instanceof TypeError;
+    if (isNetwork) {
+      showError(`Server not reachable at ${server}. Copy the curl command below and run it in your terminal.`);
+    } else {
+      showError(err.message || 'Failed to place order.');
+    }
+    submitBtn.disabled    = false;
+    submitBtn.textContent = 'Place Order →';
+  }
+});
+
+// ── POLLING ────────────────────────────────────────────────────────
+let pollInterval = null;
+
+const PHASES = ['ivr', 'hold', 'human_conversation', 'completed'];
+const PHASE_LABELS = {
+  ivr:                'Navigating IVR…',
+  hold:               'On hold…',
+  human_conversation: 'Talking to employee',
+  completed:          'Call completed',
+  failed:             'Call failed',
+  disconnected:       'Disconnected',
+};
+
+function startPolling(callSid, server) {
+  document.getElementById('statusEmpty').style.display = 'none';
+  document.getElementById('statusLive').style.display  = 'block';
+  document.getElementById('callSidDisplay').textContent = callSid;
+
+  poll(callSid, server);
+  pollInterval = setInterval(() => poll(callSid, server), 3000);
+}
+
+async function poll(callSid, server) {
+  try {
+    const res = await fetch(`${server}/call/${callSid}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderStatus(data);
+
+    const logs    = data.logs || [];
+    const isDone  = ['completed', 'failed', 'disconnected'].includes(data.phase);
+    const hasResult = logs.some(l => l.event === 'complete_order');
+
+    if (isDone || hasResult) {
+      clearInterval(pollInterval);
+      submitBtn.disabled    = false;
+      submitBtn.textContent = 'Place New Order →';
+    }
+  } catch (_) { /* silently retry */ }
+}
+
+function renderStatus(data) {
+  // Retry badge
+  const retryBadge = document.getElementById('retryBadge');
+  if (data.retry_count > 0) {
+    retryBadge.style.display = '';
+    retryBadge.textContent   = `retry ×${data.retry_count}`;
+  } else {
+    retryBadge.style.display = 'none';
+  }
+
+  // Phase bar
+  const phaseIdx = PHASES.indexOf(data.phase);
+  document.querySelectorAll('.phase-step').forEach((el, i) => {
+    el.classList.toggle('active', i === phaseIdx);
+    el.classList.toggle('done',   i < phaseIdx);
+  });
+  document.querySelectorAll('.phase-name').forEach(el => {
+    el.classList.toggle('active', el.dataset.phase === data.phase);
+  });
+
+  const isDone = ['completed', 'failed', 'disconnected'].includes(data.phase);
+  document.getElementById('phaseCurrent').innerHTML = isDone
+    ? `<span class="static-dot"></span><span>${PHASE_LABELS[data.phase] || data.phase}</span>`
+    : `<span class="pulse-dot"></span><span>${PHASE_LABELS[data.phase] || data.phase}</span>`;
+
+  // Logs — flat entry shape: {event, timestamp, ...rest}
+  const logs = data.logs || [];
+  if (logs.length === 0) return;
+
+  document.getElementById('logsCount').textContent = `${logs.length} event${logs.length !== 1 ? 's' : ''}`;
+
+  document.getElementById('logsBody').innerHTML = [...logs].reverse().map(log => {
+    const isComplete  = log.event === 'complete_order';
+    const ts          = log.timestamp ? formatTime(log.timestamp) : '';
+    const entryClass  = isComplete ? 'log-entry log-complete' : 'log-entry';
+    const evtClass    = isComplete ? 'evt-complete' : 'evt-name';
+
+    // Flat shape: everything except event + timestamp is detail
+    const extra = Object.entries(log)
+      .filter(([k]) => k !== 'event' && k !== 'timestamp')
+      .slice(0, 3);
+    const detail = extra.length
+      ? ' — ' + extra.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
+      : '';
+
+    return `<div class="${entryClass}">
+      <span class="log-time">${ts}</span>
+      <span class="log-event"><span class="${evtClass}">${log.event || 'event'}</span>${detail}</span>
+    </div>`;
+  }).join('');
+
+  // Summary — flat complete_order fields
+  const completeLog = logs.find(l => l.event === 'complete_order');
+  if (completeLog) renderSummary(completeLog);
+}
+
+function formatTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  } catch (_) { return String(ts).slice(-8); }
+}
+
+function renderSummary(r) {
+  const sec = document.getElementById('summarySection');
+  if (sec.dataset.rendered === '1') return;
+  sec.dataset.rendered = '1';
+  sec.style.display = '';
+
+  const outcome      = r.outcome || 'completed';
+  const outcomeClass = `outcome-${outcome}`;
+  const outcomeLabel = { completed: '✓ Order Placed', over_budget: '⚠ Over Budget', nothing_available: '✕ Item Unavailable', detected_as_bot: '⚠ Detected as Bot' }[outcome] || outcome;
+
+  let itemsHtml = '';
+
+  // Pizza — flat keys: pizza_description, pizza_price, pizza_substitutions
+  if (r.pizza_description) {
+    itemsHtml += `<div class="summary-row">
+      <span class="summary-item-label">Pizza</span>
+      <span class="summary-item-desc">${r.pizza_description}</span>
+      <span class="summary-item-price">${r.pizza_price != null ? '$' + Number(r.pizza_price).toFixed(2) : '—'}</span>
+    </div>`;
+    if (r.pizza_substitutions && Object.keys(r.pizza_substitutions).length > 0) {
+      const subs = Object.entries(r.pizza_substitutions).map(([k, v]) => `${k} → ${v}`).join(', ');
+      itemsHtml += `<div class="summary-row" style="padding:4px 0;">
+        <span class="summary-item-label" style="font-size:11px;color:var(--text3);">subs</span>
+        <span class="summary-item-desc" style="font-size:11px;color:var(--warn);">${subs}</span>
+        <span></span>
+      </div>`;
+    }
+  }
+
+  // Side — flat keys: side_description, side_original, side_price
+  if (r.side_description) {
+    const origNote = r.side_original && r.side_original !== r.side_description
+      ? ` <span style="color:var(--text3);font-size:11px;">(was: ${r.side_original})</span>` : '';
+    itemsHtml += `<div class="summary-row">
+      <span class="summary-item-label">Side</span>
+      <span class="summary-item-desc">${r.side_description}${origNote}</span>
+      <span class="summary-item-price">${r.side_price != null ? '$' + Number(r.side_price).toFixed(2) : '—'}</span>
+    </div>`;
+  } else {
+    itemsHtml += `<div class="summary-row">
+      <span class="summary-item-label">Side</span>
+      <span class="summary-item-desc" style="color:var(--text3);">skipped</span>
+      <span class="summary-item-price">—</span>
+    </div>`;
+  }
+
+  // Drink — flat keys: drink_description, drink_price
+  if (r.drink_description) {
+    itemsHtml += `<div class="summary-row">
+      <span class="summary-item-label">Drink</span>
+      <span class="summary-item-desc">${r.drink_description}</span>
+      <span class="summary-item-price">${r.drink_price != null ? '$' + Number(r.drink_price).toFixed(2) : '—'}</span>
+    </div>`;
+  } else {
+    itemsHtml += `<div class="summary-row">
+      <span class="summary-item-label">Drink</span>
+      <span class="summary-item-desc" style="color:var(--text3);">skipped</span>
+      <span class="summary-item-price">—</span>
+    </div>`;
+  }
+
+  const totalHtml = r.total != null ? `<div class="summary-total-row">
+    <span class="summary-total-label">Total</span>
+    <span class="summary-total-val">$${Number(r.total).toFixed(2)}</span>
+  </div>` : '';
+
+  const metaHtml = (r.delivery_time || r.order_number) ? `<div class="summary-meta">
+    ${r.order_number   ? `<div class="meta-item"><div class="meta-item-label">Order #</div><div class="meta-item-val">${r.order_number}</div></div>` : ''}
+    ${r.delivery_time  ? `<div class="meta-item"><div class="meta-item-label">ETA</div><div class="meta-item-val">${r.delivery_time}</div></div>` : ''}
+  </div>` : '';
+
+  sec.innerHTML = `<div class="summary-card">
+    <div class="summary-header">
+      <span class="summary-header-icon">${outcome === 'completed' ? '🍕' : '⚠'}</span>
+      <span class="summary-header-title">Order ${outcome === 'completed' ? 'Confirmed' : 'Ended'}</span>
+      <span class="summary-header-sub"><span class="outcome-badge ${outcomeClass}">${outcomeLabel}</span></span>
+    </div>
+    <div class="summary-body">
+      ${itemsHtml}
+      ${totalHtml}
+      ${metaHtml}
+      ${r.special_instructions_delivered != null ? `<div style="margin-top:12px;font-size:12px;font-family:var(--mono);color:var(--text3);">special instructions delivered: ${r.special_instructions_delivered ? 'yes' : 'no'}</div>` : ''}
+    </div>
+  </div>`;
+}
+</script>
+</body>
+</html>
